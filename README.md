@@ -14,7 +14,6 @@ An end-to-end, event-driven microservices platform that automatically detects an
 - [API Reference](#api-reference)
 - [Experiment Results](#experiment-results)
 - [Configuration](#configuration)
-- [Project Structure](#project-structure)
 
 ---
 
@@ -300,41 +299,9 @@ Service URLs (`INGESTION_URL`, `ANOMALY_URL`, etc.) default to the Docker Compos
 
 ---
 
-## Project Structure
-
-```
-rca-platform/
-├── services/
-│   ├── gateway/          # API gateway (JWT auth, routing)
-│   ├── ingestion/        # Data ingestion (Postgres, REST, Kafka)
-│   ├── anomaly/          # Anomaly detection (Z-Score, IF, LSTM)
-│   │   └── detectors/
-│   ├── rca/              # Root cause analysis (causal graph, DoWhy, Granger)
-│   │   └── engines/
-│   ├── prescriptive/     # Action optimisation (LP / knapsack)
-│   │   └── optimizers/
-│   ├── narrative/        # AI narrative generation (Claude)
-│   └── governance/       # Audit logging (Postgres)
-├── shared/               # Shared schemas, events, Redis bus
-├── infra/
-│   └── postgres/         # Database init SQL
-├── experiments/          # Standalone experiment runner + outputs
-├── docker-compose.yml
-├── start.sh / stop.sh
-└── .env.example
-```
-
----
-
 ## Stopping the platform
 
 ```bash
 ./stop.sh
-# or: docker compose down
-```
-
-To also remove stored data:
-
-```bash
-docker compose down -v
+# or: docker compose down -v
 ```
