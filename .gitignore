@@ -27,5 +27,8 @@ services/rca/engines/BeyondtheSilence.tex
 .DS_Store
 Thumbs.db
 
+# Local-only notes (do not publish)
+INTERVIEW_NOTES.md
+
 # Logs
 *.log
