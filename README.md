@@ -9,7 +9,6 @@ An end-to-end, event-driven microservices platform that automatically detects an
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Services](#services)
-- [Tech Stack](#tech-stack)
 - [Getting Started](#getting-started)
 - [Experiment Results](#experiment-results)
 - [Configuration](#configuration)
@@ -33,41 +32,47 @@ Each stage can be triggered via the unified API gateway, or fired independently 
 ## Architecture
 
 ```mermaid
-flowchart TD
-    subgraph EXT["External Sources"]
-        OA[Oracle APEX]
-        SF[Salesforce]
-        SAP[SAP BTP]
-    end
+C4Container
+    title RCA Platform — Container Architecture
 
-    GW["**Gateway Service** :8000\nJWT auth · routing"]
+    Person_Ext(client, "API Client", "Operations team or external caller")
+    System_Ext(ext, "External Sources", "Oracle APEX · Salesforce · SAP BTP")
+    System_Ext(llm, "Anthropic API", "claude-sonnet-4-6")
 
-    ING["**Ingestion Service** :8001\nPostgreSQL · REST · Kafka"]
-    ANO["**Anomaly Service** :8002\nZ-Score · Isolation Forest · LSTM"]
-    RCA["**RCA Service** :8003\nCausal Graph · DoWhy · Granger"]
-    PRE["**Prescriptive Service** :8004\nLP Optimiser · PuLP/CBC"]
-    NAR["**Narrative Service** :8005\nClaude claude-sonnet-4-6"]
-    GOV[("**Governance Service** :8006\nPostgreSQL audit log")]
+    System_Boundary(p, "RCA Platform") {
+        Container(gw, "Gateway", "FastAPI :8000", "JWT auth, request routing, health aggregation")
+        Container(ing, "Ingestion", "FastAPI :8001", "Fetches data from REST, PostgreSQL, or Kafka")
+        Container(ano, "Anomaly Detection", "FastAPI :8002", "Z-Score · Isolation Forest · LSTM Autoencoder")
+        Container(rca, "Root Cause Analysis", "FastAPI :8003", "Causal Graph · DoWhy · Granger causality")
+        Container(pre, "Prescriptive", "FastAPI :8004", "0/1 Knapsack LP optimiser — PuLP/CBC solver")
+        Container(nar, "Narrative", "FastAPI :8005", "Prompt-cached LLM narrative generation")
+        Container(gov, "Governance", "FastAPI :8006", "Audit log query API")
+        ContainerDb(pg, "PostgreSQL 15", "Database", "Structured audit records")
+        ContainerQueue(redis, "Redis 7", "Pub/Sub", "Async pipeline event bus")
+        ContainerQueue(kafka, "Apache Kafka", "Message Broker", "External data ingest")
+    }
 
-    OA --> GW
-    SF --> GW
-    SAP --> GW
-
-    GW --> ING
-    ING -->|data.ingested| ANO
-    ANO -->|anomaly.detected| RCA
-    RCA -->|rca.complete| PRE
-    PRE -->|prescription.ready| NAR
-
-    ING -.->|audit| GOV
-    ANO -.->|audit| GOV
-    RCA -.->|audit| GOV
-    PRE -.->|audit| GOV
-    NAR -.->|audit| GOV
+    Rel(client, gw, "HTTPS", "JWT Bearer")
+    Rel(ext, gw, "REST / HTTPS")
+    Rel(gw, ing, "HTTP")
+    Rel(ing, kafka, "consume")
+    Rel(ing, redis, "publish data_ingested")
+    Rel(redis, ano, "data_ingested")
+    Rel(ano, redis, "publish anomaly_detected")
+    Rel(redis, rca, "anomaly_detected")
+    Rel(rca, redis, "publish rca_complete")
+    Rel(redis, pre, "rca_complete")
+    Rel(pre, redis, "publish prescription_ready")
+    Rel(redis, nar, "prescription_ready")
+    Rel(nar, llm, "API call")
+    Rel(gov, pg, "persist")
+    Rel(ing, gov, "audit event")
+    Rel(ano, gov, "audit event")
+    Rel(rca, gov, "audit event")
+    Rel(pre, gov, "audit event")
+    Rel(nar, gov, "audit event")
+    Rel(gw, gov, "HTTP /audit")
 ```
-
-Solid arrows are Redis pub/sub events driving the pipeline forward.
-Dashed arrows show every service also writing to the Governance audit log.
 
 ---
 
@@ -124,25 +129,6 @@ Persists every pipeline event to Postgres as a structured audit record. Queryabl
 
 ---
 
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| API framework | FastAPI + Pydantic v2 |
-| Async runtime | asyncio + uvicorn |
-| Messaging | Redis pub/sub |
-| Streaming ingest | Apache Kafka |
-| Storage | PostgreSQL 15 |
-| ML / anomaly | scikit-learn, PyTorch |
-| Causal inference | DoWhy, statsmodels (Granger) |
-| Graph analysis | NetworkX |
-| Optimisation | PuLP (CBC solver) |
-| AI narrative | Anthropic SDK (Claude) |
-| Containerisation | Docker Compose |
-| Schema validation | Pydantic v2 |
-
----
-
 ## Getting Started
 
 ### Prerequisites
@@ -167,262 +153,6 @@ cp .env.example .env
 ```
 
 This starts Postgres, Redis, Kafka/Zookeeper, and all seven application services.
-
-### 3. Try the API with Bruno
-
-The collection below covers all eight endpoints. Open [Bruno](https://www.usebruno.com/), create a new collection, add a **Local** environment with `baseUrl = http://localhost:8000` and `token = <empty>`, then paste each block as a new request.
-
-> Run **Get Token** first and copy the `access_token` into the `token` environment variable — every other request picks it up automatically via `{{token}}`.
-
----
-
-**Health Check**
-```
-meta {
-  name: Health Check
-  type: http
-  seq: 1
-}
-
-get {
-  url: {{baseUrl}}/health
-  body: none
-  auth: none
-}
-```
-
----
-
-**Get Token**
-```
-meta {
-  name: Get Token
-  type: http
-  seq: 2
-}
-
-post {
-  url: {{baseUrl}}/auth/token
-  body: json
-  auth: none
-}
-
-body:json {
-  {
-    "username": "admin",
-    "password": "admin"
-  }
-}
-```
-
----
-
-**Full Pipeline** *(triggers the full async pipeline — poll Audit Log to follow progress)*
-```
-meta {
-  name: Full Pipeline
-  type: http
-  seq: 3
-}
-
-post {
-  url: {{baseUrl}}/analyze
-  body: json
-  auth: bearer
-}
-
-auth:bearer {
-  token: {{token}}
-}
-
-body:json {
-  {
-    "source_type": "rest",
-    "connection": {
-      "url": "https://your-data-endpoint.example.com/metrics"
-    },
-    "trace_id": "demo-001"
-  }
-}
-```
-
----
-
-**Detect Anomalies** *(method: `isolation_forest` | `zscore` | `lstm`)*
-```
-meta {
-  name: Detect Anomalies
-  type: http
-  seq: 4
-}
-
-post {
-  url: {{baseUrl}}/detect
-  body: json
-  auth: bearer
-}
-
-auth:bearer {
-  token: {{token}}
-}
-
-body:json {
-  {
-    "trace_id": "demo-001",
-    "method": "isolation_forest",
-    "contamination": 0.05,
-    "rows": [
-      {"temperature": 75.1, "pressure": 100.2, "vibration": 0.50, "flow_rate": 50.1, "output_quality": 96.2},
-      {"temperature": 74.8, "pressure":  99.8, "vibration": 0.49, "flow_rate": 49.8, "output_quality": 95.9},
-      {"temperature": 95.4, "pressure":  68.3, "vibration": 0.51, "flow_rate": 49.5, "output_quality": 71.3},
-      {"temperature": 96.1, "pressure":  65.7, "vibration": 0.52, "flow_rate": 49.2, "output_quality": 69.8},
-      {"temperature": 75.3, "pressure": 100.5, "vibration": 0.50, "flow_rate": 50.3, "output_quality": 96.4}
-    ]
-  }
-}
-```
-
----
-
-**Root Cause Analysis** *(pass the anomalous rows returned by Detect)*
-```
-meta {
-  name: Root Cause Analysis
-  type: http
-  seq: 5
-}
-
-post {
-  url: {{baseUrl}}/rca
-  body: json
-  auth: bearer
-}
-
-auth:bearer {
-  token: {{token}}
-}
-
-body:json {
-  {
-    "anomaly_id": "replace-with-anomaly-id",
-    "trace_id": "demo-001",
-    "rows": [
-      {"temperature": 95.4, "pressure": 68.3, "vibration": 0.51, "flow_rate": 49.5, "output_quality": 71.3},
-      {"temperature": 96.1, "pressure": 65.7, "vibration": 0.52, "flow_rate": 49.2, "output_quality": 69.8},
-      {"temperature": 95.8, "pressure": 67.1, "vibration": 0.50, "flow_rate": 49.8, "output_quality": 70.5}
-    ]
-  }
-}
-```
-
----
-
-**Prescribe Actions** *(budget: fraction of total resource budget to spend, 0.0 – 1.0)*
-```
-meta {
-  name: Prescribe Actions
-  type: http
-  seq: 6
-}
-
-post {
-  url: {{baseUrl}}/prescribe
-  body: json
-  auth: bearer
-}
-
-auth:bearer {
-  token: {{token}}
-}
-
-body:json {
-  {
-    "rca_id": "replace-with-rca-id",
-    "trace_id": "demo-001",
-    "budget": 0.6,
-    "root_causes": [
-      {"feature": "temperature", "effect_size": 17.241, "confidence": 0.945, "method": "correlation"},
-      {"feature": "pressure",    "effect_size":  5.632, "confidence": 0.849, "method": "correlation"},
-      {"feature": "vibration",   "effect_size":  0.396, "confidence": 0.284, "method": "correlation"}
-    ]
-  }
-}
-```
-
----
-
-**Generate Narrative** *(calls Claude claude-sonnet-4-6 — returns executive summary + recommendations)*
-```
-meta {
-  name: Generate Narrative
-  type: http
-  seq: 7
-}
-
-post {
-  url: {{baseUrl}}/narrate
-  body: json
-  auth: bearer
-}
-
-auth:bearer {
-  token: {{token}}
-}
-
-body:json {
-  {
-    "prescription_id": "replace-with-prescription-id",
-    "trace_id": "demo-001",
-    "rca_summary": "Top root cause: 'temperature' with confidence 0.95. Identified 2 contributing factors.",
-    "root_causes": [
-      {"feature": "temperature", "effect_size": 17.241, "confidence": 0.945, "method": "correlation"},
-      {"feature": "pressure",    "effect_size":  5.632, "confidence": 0.849, "method": "correlation"}
-    ],
-    "actions": [
-      {
-        "description": "Inspect heating/cooling elements and PID controller tuning",
-        "target_feature": "temperature",
-        "adjustment": "decrease",
-        "expected_impact": 0.945,
-        "priority": 1
-      },
-      {
-        "description": "Check pressure regulator and upstream supply lines for blockage or leak",
-        "target_feature": "pressure",
-        "adjustment": "increase",
-        "expected_impact": 0.849,
-        "priority": 2
-      }
-    ]
-  }
-}
-```
-
----
-
-**Audit Log** *(filter by trace_id, service, from/to datetime, or limit)*
-```
-meta {
-  name: Audit Log
-  type: http
-  seq: 8
-}
-
-get {
-  url: {{baseUrl}}/audit?trace_id=demo-001&limit=50
-  body: none
-  auth: bearer
-}
-
-auth:bearer {
-  token: {{token}}
-}
-
-params:query {
-  trace_id: demo-001
-  limit: 50
-}
-```
 
 ### Run experiments locally (no Docker needed)
 
