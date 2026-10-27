@@ -32,46 +32,50 @@ Each stage can be triggered via the unified API gateway, or fired independently 
 ## Architecture
 
 ```mermaid
-C4Container
-    title RCA Platform — Container Architecture
+flowchart TD
+    classDef ext   fill:#f1f5f9,stroke:#94a3b8,color:#334155,rx:6
+    classDef svc   fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef db    fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    classDef bus   fill:#dcfce7,stroke:#16a34a,color:#14532d
 
-    Person_Ext(client, "API Client", "Operations team or external caller")
-    System_Ext(ext, "External Sources", "Oracle APEX · Salesforce · SAP BTP")
-    System_Ext(llm, "Anthropic API", "claude-sonnet-4-6")
+    CLIENT(["API Client"]):::ext
+    EXT(["External Sources\nOracle APEX · Salesforce · SAP BTP"]):::ext
+    LLM(["Anthropic API\nclaude-sonnet-4-6"]):::ext
 
-    System_Boundary(p, "RCA Platform") {
-        Container(gw, "Gateway", "FastAPI :8000", "JWT auth, request routing, health aggregation")
-        Container(ing, "Ingestion", "FastAPI :8001", "Fetches data from REST, PostgreSQL, or Kafka")
-        Container(ano, "Anomaly Detection", "FastAPI :8002", "Z-Score · Isolation Forest · LSTM Autoencoder")
-        Container(rca, "Root Cause Analysis", "FastAPI :8003", "Causal Graph · DoWhy · Granger causality")
-        Container(pre, "Prescriptive", "FastAPI :8004", "0/1 Knapsack LP optimiser — PuLP/CBC solver")
-        Container(nar, "Narrative", "FastAPI :8005", "Prompt-cached LLM narrative generation")
-        Container(gov, "Governance", "FastAPI :8006", "Audit log query API")
-        ContainerDb(pg, "PostgreSQL 15", "Database", "Structured audit records")
-        ContainerQueue(redis, "Redis 7", "Pub/Sub", "Async pipeline event bus")
-        ContainerQueue(kafka, "Apache Kafka", "Message Broker", "External data ingest")
-    }
+    subgraph PLATFORM["RCA Platform"]
+        GW["Gateway  :8000\nJWT auth · routing · health"]:::svc
 
-    Rel(client, gw, "HTTPS", "JWT Bearer")
-    Rel(ext, gw, "REST / HTTPS")
-    Rel(gw, ing, "HTTP")
-    Rel(ing, kafka, "consume")
-    Rel(ing, redis, "publish data_ingested")
-    Rel(redis, ano, "data_ingested")
-    Rel(ano, redis, "publish anomaly_detected")
-    Rel(redis, rca, "anomaly_detected")
-    Rel(rca, redis, "publish rca_complete")
-    Rel(redis, pre, "rca_complete")
-    Rel(pre, redis, "publish prescription_ready")
-    Rel(redis, nar, "prescription_ready")
-    Rel(nar, llm, "API call")
-    Rel(gov, pg, "persist")
-    Rel(ing, gov, "audit event")
-    Rel(ano, gov, "audit event")
-    Rel(rca, gov, "audit event")
-    Rel(pre, gov, "audit event")
-    Rel(nar, gov, "audit event")
-    Rel(gw, gov, "HTTP /audit")
+        subgraph PIPELINE["Event-Driven Pipeline — Redis Pub/Sub"]
+            ING["Ingestion  :8001\nREST · PostgreSQL · Kafka"]:::svc
+            ANO["Anomaly Detection  :8002\nZ-Score · Isolation Forest · LSTM"]:::svc
+            RCA_C["Root Cause Analysis  :8003\nCausal Graph · DoWhy · Granger"]:::svc
+            PRE["Prescriptive Analytics  :8004\n0/1 Knapsack LP · PuLP/CBC"]:::svc
+            NAR["Narrative Generation  :8005\nPrompt-cached Claude"]:::svc
+        end
+
+        subgraph STORES["Data Stores"]
+            GOV["Governance  :8006\nAudit log API"]:::svc
+            PG[("PostgreSQL 15\naudit log")]:::db
+            KAFKA[("Apache Kafka\nexternal ingest")]:::bus
+        end
+    end
+
+    CLIENT -->|"HTTPS / JWT"| GW
+    EXT -->|REST| GW
+    GW --> ING
+    ING -->|"① data_ingested"| ANO
+    ANO -->|"② anomaly_detected"| RCA_C
+    RCA_C -->|"③ rca_complete"| PRE
+    PRE -->|"④ prescription_ready"| NAR
+    NAR -.->|API| LLM
+    ING -.->|consume| KAFKA
+    ING -.->|audit| GOV
+    ANO -.->|audit| GOV
+    RCA_C -.->|audit| GOV
+    PRE -.->|audit| GOV
+    NAR -.->|audit| GOV
+    GOV --> PG
+    GW -.->|"/audit"| GOV
 ```
 
 ---
