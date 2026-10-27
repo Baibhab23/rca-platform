@@ -1,0 +1,91 @@
+RCA PLATFORM — EXPERIMENT REPORT
+==================================================
+Generated : 2026-10-06T08:28:44.668960+00:00
+Dataset   : 200 rows of simulated manufacturing sensor data
+Scenario  : Fault injected at rows 45–55 — temperature spiked +20 °C,
+            pressure dropped –30 bar, and output quality fell by 25 units.
+
+1. DATASET OVERVIEW
+--------------------------------------------------
+The dataset covers five process variables recorded over 200 time steps.
+Under normal conditions the process runs at approximately 75 °C, 100 bar,
+0.5 mm/s vibration, 50 L/min flow, and 96 quality units. The fault window
+(rows 45–55) pushes temperature and pressure well outside those baselines.
+
+Metric             Temp (°C)    Pressure (bar)   Vibration (mm/s)   Flow (L/min)   Quality
+------------------------------------------------------------------------------------------
+mean               76.04        98.45            0.5                49.89          95.3
+std                4.92         8.35             0.05               3.05           5.79
+min                70.74        63.56            0.35               42.31          69.4
+max                96.74        112.59           0.63               57.65          99.66
+
+2. ANOMALY DETECTION RESULTS
+--------------------------------------------------
+Three detectors were applied. Z-Score and Isolation Forest both achieved
+perfect precision, flagging only the injected fault rows with no false
+positives. The LSTM autoencoder detected the peak of the fault but lagged
+on onset by roughly six rows and produced three false positives just past
+the window edge.
+
+  Detector               Anomalies flagged      Precision on fault rows
+  -----------------------------------------------------------------
+  Z-Score (threshold 3σ) 11                     100%
+  Isolation Forest (5%)  10                     100%
+  LSTM Autoencoder       8                      62%
+
+Recommendation: use Z-Score or Isolation Forest for real-time alerting.
+Consider tightening the LSTM threshold factor from 2.0 to 1.5 for earlier
+onset detection if false-positive tolerance permits.
+
+3. ROOT CAUSE ANALYSIS
+--------------------------------------------------
+Effect sizes were estimated using dowhy (DoWhy was not
+installed; correlation served as a proxy). The top drivers ranked by
+effect size on output quality are:
+
+  1st.  Temperature           effect size = 17.241  (confidence 0.945)
+  2nd.  Pressure              effect size = 5.632  (confidence 0.849)
+  3rd.  Vibration             effect size = 0.396  (confidence 0.284)
+  4th.  Flow Rate             effect size = 0.033  (confidence 0.032)
+
+Pressure and temperature are the genuine fault triggers. Output quality
+appears high on this list because it co-varies with the fault, but it is
+a downstream symptom rather than a cause.
+
+Granger causality found no statistically significant lagged predictors
+(p > 0.05 for all pairs), which confirms the fault is a sudden spike
+rather than a slowly building trend.
+
+4. RECOMMENDED ACTIONS
+--------------------------------------------------
+The LP optimiser selected the two highest-impact interventions within a
+60 % resource budget. Full-budget recommendations follow in parentheses.
+
+  Action 1 — Temperature  [HIGH]
+  Effect size: 17.241  |  Expected impact: 16.296  |  Direction: decrease
+  Temperature spiked ~20°C above baseline during anomaly window.
+  1. Inspect heating/cooling elements and temperature controller PID tuning.
+   2. Verify thermocouple calibration — a +20°C drift can indicate sensor fault.
+   3. Set control limits at ±5°C from the 75°C setpoint (3-sigma = ±14.7°C observed).
+   4. Cross-check with pressure — simultaneous pressure drop + temperature spike often indicates a coolant flow failure.
+
+  Action 2 — Pressure  [CRITICAL]
+  Effect size: 5.632  |  Expected impact: 4.783  |  Direction: decrease
+  Pressure dropped ~30 bar below baseline during anomaly window.
+  1. Check pressure regulator / relief valve for malfunction.
+   2. Inspect upstream supply lines for blockage or leak.
+   3. Set a real-time alert if pressure deviates > 10 bar from the 100-bar setpoint.
+   4. Review maintenance logs for the last 30 days — this type of drop is often preceded by slow valve wear.
+
+  If resources allow (full budget), also address:
+    - Vibration [LOW]: 1. Vibration is within spec (mean 0.497 mm/s, normal range ≈ 0.35–0.63).
+    - Flow Rate [MEDIUM]: 1. Verify flow-meter calibration; minor drift causes spurious correlation.
+
+5. NOTES & NEXT STEPS
+--------------------------------------------------
+• Install the `dowhy` Python package to replace correlation-based effect
+  estimates with proper causal inference. This will sharpen action priorities.
+• The LSTM detector trained on only 100 rows; training on the full dataset
+  would improve recall on fault onset.
+• These results are based on synthetic data. Validate all thresholds and
+  control limits against real historical process data before deployment.

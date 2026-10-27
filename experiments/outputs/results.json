@@ -1,0 +1,222 @@
+{
+  "run_at": "2026-10-06T08:28:44.668960+00:00",
+  "dataset_size": 200,
+  "anomaly": {
+    "zscore": {
+      "n_anomalies": 11,
+      "anomaly_indices": [
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55
+      ],
+      "features": [
+        "timestamp",
+        "temperature",
+        "pressure",
+        "vibration",
+        "flow_rate",
+        "output_quality"
+      ],
+      "threshold": 3.0,
+      "top5_max_z_scores": [
+        4.470038870390926,
+        4.255647730387613,
+        4.2105495072145676,
+        4.203344577874728,
+        4.179961516851551
+      ],
+      "precision_on_injected": 1.0
+    },
+    "isolation_forest": {
+      "n_anomalies": 10,
+      "anomaly_indices": [
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        52,
+        53,
+        54,
+        55
+      ],
+      "features": [
+        "timestamp",
+        "temperature",
+        "pressure",
+        "vibration",
+        "flow_rate",
+        "output_quality"
+      ],
+      "contamination": 0.05,
+      "min_score": -0.6716,
+      "precision_on_injected": 1.0
+    },
+    "lstm": {
+      "n_anomalies": 8,
+      "anomaly_indices": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58
+      ],
+      "features": [
+        "timestamp",
+        "temperature",
+        "pressure",
+        "vibration",
+        "flow_rate",
+        "output_quality"
+      ],
+      "threshold_factor": 2.0,
+      "max_recon_error": 3.98821,
+      "precision_on_injected": 0.625
+    }
+  },
+  "rca": {
+    "dowhy": {
+      "root_causes": [
+        {
+          "feature": "temperature",
+          "effect_size": 17.240986,
+          "raw_effect": 0.858502,
+          "delta": 20.082632,
+          "confidence": 0.945178,
+          "method": "dowhy",
+          "cost": 0.25
+        },
+        {
+          "feature": "pressure",
+          "effect_size": 5.632106,
+          "raw_effect": 0.194642,
+          "delta": 28.93567,
+          "confidence": 0.849218,
+          "method": "dowhy",
+          "cost": 0.35
+        },
+        {
+          "feature": "vibration",
+          "effect_size": 0.396444,
+          "raw_effect": 13.780448,
+          "delta": 0.028769,
+          "confidence": 0.283895,
+          "method": "dowhy",
+          "cost": 0.2
+        },
+        {
+          "feature": "flow_rate",
+          "effect_size": 0.033448,
+          "raw_effect": 0.056123,
+          "delta": 0.595984,
+          "confidence": 0.032366,
+          "method": "dowhy",
+          "cost": 0.2
+        }
+      ],
+      "method_used": "dowhy"
+    },
+    "granger": {
+      "significant_causes": []
+    }
+  },
+  "prescriptive": {
+    "budget_25pct": {
+      "n_actions_selected": 1,
+      "actions": [
+        {
+          "priority": 1,
+          "feature": "temperature",
+          "description": "Reduce variance in 'temperature' \u2014 causal effect size 17.241 on outcome.",
+          "expected_impact": 16.2958,
+          "adjustment": {
+            "direction": "decrease",
+            "magnitude": 17.241
+          }
+        }
+      ]
+    },
+    "budget_60pct": {
+      "n_actions_selected": 2,
+      "actions": [
+        {
+          "priority": 1,
+          "feature": "temperature",
+          "description": "Reduce variance in 'temperature' \u2014 causal effect size 17.241 on outcome.",
+          "expected_impact": 16.2958,
+          "adjustment": {
+            "direction": "decrease",
+            "magnitude": 17.241
+          }
+        },
+        {
+          "priority": 2,
+          "feature": "pressure",
+          "description": "Reduce variance in 'pressure' \u2014 causal effect size 5.632 on outcome.",
+          "expected_impact": 4.7829,
+          "adjustment": {
+            "direction": "decrease",
+            "magnitude": 5.6321
+          }
+        }
+      ]
+    },
+    "budget_100pct": {
+      "n_actions_selected": 4,
+      "actions": [
+        {
+          "priority": 1,
+          "feature": "temperature",
+          "description": "Reduce variance in 'temperature' \u2014 causal effect size 17.241 on outcome.",
+          "expected_impact": 16.2958,
+          "adjustment": {
+            "direction": "decrease",
+            "magnitude": 17.241
+          }
+        },
+        {
+          "priority": 2,
+          "feature": "pressure",
+          "description": "Reduce variance in 'pressure' \u2014 causal effect size 5.632 on outcome.",
+          "expected_impact": 4.7829,
+          "adjustment": {
+            "direction": "decrease",
+            "magnitude": 5.6321
+          }
+        },
+        {
+          "priority": 3,
+          "feature": "vibration",
+          "description": "Reduce variance in 'vibration' \u2014 causal effect size 0.396 on outcome.",
+          "expected_impact": 0.1125,
+          "adjustment": {
+            "direction": "decrease",
+            "magnitude": 0.3964
+          }
+        },
+        {
+          "priority": 4,
+          "feature": "flow_rate",
+          "description": "Reduce variance in 'flow_rate' \u2014 causal effect size 0.033 on outcome.",
+          "expected_impact": 0.0011,
+          "adjustment": {
+            "direction": "decrease",
+            "magnitude": 0.0334
+          }
+        }
+      ]
+    }
+  }
+}
