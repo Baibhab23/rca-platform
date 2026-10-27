@@ -33,61 +33,42 @@ Each stage can be triggered via the unified API gateway, or fired independently 
 
 ## Architecture
 
-```
-  ┌───────────────────────────────────────────────────────────────┐
-  │                      External Sources                         │
-  │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    │
-  │  │  Oracle APEX │    │  Salesforce  │    │   SAP BTP    │    │
-  └──┴──────┬───────┴────┴──────┬───────┴────┴──────┬───────┴────┘
-             └──────────────────┼──────────────────┘
-                                │  REST / Kafka / PostgreSQL
-                                ▼
-                    ┌───────────────────────┐
-                    │    Gateway Service    │  :8000
-                    │  JWT auth · routing   │
-                    └───────────┬───────────┘
-                                │
-              ┌─────────────────▼─────────────────┐
-              │         Ingestion Service          │  :8001  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐
-              └─────────────────┬─────────────────┘                           ╎
-                          data.ingested                                        ╎
-                  ┌─────────────▼──────────────────┐                          ╎
-                  │       Anomaly Service           │  :8002  ╌╌╌╌╌╌╌╌╌╌╌╌╌┐ ╎
-                  └─────────────┬──────────────────┘                       ╎ ╎
-                          anomaly.detected                                  ╎ ╎
-                       ┌────────▼───────────────────┐                      ╎ ╎
-                       │        RCA Service          │  :8003  ╌╌╌╌╌╌╌╌╌┐  ╎ ╎
-                       └────────┬───────────────────┘                   ╎  ╎ ╎
-                          rca.complete                                   ╎  ╎ ╎
-                          ┌─────▼──────────────────────┐                ╎  ╎ ╎
-                          │    Prescriptive Service     │  :8004  ╌╌╌╌┐ ╎  ╎ ╎
-                          └─────┬──────────────────────┘             ╎ ╎  ╎ ╎
-                          prescription.ready                          ╎ ╎  ╎ ╎
-                               ┌─▼────────────────────────┐          ╎ ╎  ╎ ╎
-                               │    Narrative Service      │  :8005  ╌┐╎ ╎  ╎ ╎
-                               │    (Claude claude-sonnet-4-6)        ││╎ ╎  ╎ ╎
-                               └──────────────────────────┘          │╎ ╎  ╎ ╎
-                                                                      ▼▼ ▼  ▼ ▼
-                    ┌──────────────────────────────────────────────────────────┐
-                    │              Governance Service  :8006                   │
-                    │           PostgreSQL audit log (every event)             │
-                    └──────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph EXT["External Sources"]
+        OA[Oracle APEX]
+        SF[Salesforce]
+        SAP[SAP BTP]
+    end
+
+    GW["**Gateway Service** :8000\nJWT auth · routing"]
+
+    ING["**Ingestion Service** :8001\nPostgreSQL · REST · Kafka"]
+    ANO["**Anomaly Service** :8002\nZ-Score · Isolation Forest · LSTM"]
+    RCA["**RCA Service** :8003\nCausal Graph · DoWhy · Granger"]
+    PRE["**Prescriptive Service** :8004\nLP Optimiser · PuLP/CBC"]
+    NAR["**Narrative Service** :8005\nClaude claude-sonnet-4-6"]
+    GOV[("**Governance Service** :8006\nPostgreSQL audit log")]
+
+    OA --> GW
+    SF --> GW
+    SAP --> GW
+
+    GW --> ING
+    ING -->|data.ingested| ANO
+    ANO -->|anomaly.detected| RCA
+    RCA -->|rca.complete| PRE
+    PRE -->|prescription.ready| NAR
+
+    ING -.->|audit| GOV
+    ANO -.->|audit| GOV
+    RCA -.->|audit| GOV
+    PRE -.->|audit| GOV
+    NAR -.->|audit| GOV
 ```
 
-Solid arrows show the main pipeline flow via Redis pub/sub events.
-Dashed lines (╌╌╌) show each service also publishing every event to the Governance Service for a full audit trail.
-
-**Event flow:**
-
-| Event | Published by | Consumed by |
-|---|---|---|
-| `data_ingested` | Ingestion | Anomaly |
-| `anomaly_detected` | Anomaly | RCA |
-| `rca_complete` | RCA | Prescriptive |
-| `prescription_ready` | Prescriptive | Narrative |
-| `narrative_generated` | Narrative | — |
-
-Every event is also consumed by the Governance service for audit logging.
+Solid arrows are Redis pub/sub events driving the pipeline forward.
+Dashed arrows show every service also writing to the Governance audit log.
 
 ---
 
