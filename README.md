@@ -11,7 +11,6 @@ An end-to-end, event-driven microservices platform that automatically detects an
 - [Services](#services)
 - [Tech Stack](#tech-stack)
 - [Getting Started](#getting-started)
-- [API Reference](#api-reference)
 - [Experiment Results](#experiment-results)
 - [Configuration](#configuration)
 
@@ -169,36 +168,261 @@ cp .env.example .env
 
 This starts Postgres, Redis, Kafka/Zookeeper, and all seven application services.
 
-### 3. Verify
+### 3. Try the API with Bruno
 
-```bash
-curl http://localhost:8000/health
+The collection below covers all eight endpoints. Open [Bruno](https://www.usebruno.com/), create a new collection, add a **Local** environment with `baseUrl = http://localhost:8000` and `token = <empty>`, then paste each block as a new request.
+
+> Run **Get Token** first and copy the `access_token` into the `token` environment variable — every other request picks it up automatically via `{{token}}`.
+
+---
+
+**Health Check**
+```
+meta {
+  name: Health Check
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
 ```
 
-You should see `"status": "ok"` with per-service statuses.
+---
 
-### 4. Get an auth token
+**Get Token**
+```
+meta {
+  name: Get Token
+  type: http
+  seq: 2
+}
 
-```bash
-curl -X POST http://localhost:8000/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin"}'
+post {
+  url: {{baseUrl}}/auth/token
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "username": "admin",
+    "password": "admin"
+  }
+}
 ```
 
-### 5. Run the full pipeline
+---
 
-```bash
-curl -X POST http://localhost:8000/analyze \
-  -H "Authorization: Bearer <your_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
+**Full Pipeline** *(triggers the full async pipeline — poll Audit Log to follow progress)*
+```
+meta {
+  name: Full Pipeline
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/analyze
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
     "source_type": "rest",
-    "connection": {"url": "https://your-data-endpoint.example.com/metrics"},
+    "connection": {
+      "url": "https://your-data-endpoint.example.com/metrics"
+    },
     "trace_id": "demo-001"
-  }'
+  }
+}
 ```
 
-The pipeline runs asynchronously. Poll `/audit?trace_id=demo-001` to follow progress.
+---
+
+**Detect Anomalies** *(method: `isolation_forest` | `zscore` | `lstm`)*
+```
+meta {
+  name: Detect Anomalies
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/detect
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "trace_id": "demo-001",
+    "method": "isolation_forest",
+    "contamination": 0.05,
+    "rows": [
+      {"temperature": 75.1, "pressure": 100.2, "vibration": 0.50, "flow_rate": 50.1, "output_quality": 96.2},
+      {"temperature": 74.8, "pressure":  99.8, "vibration": 0.49, "flow_rate": 49.8, "output_quality": 95.9},
+      {"temperature": 95.4, "pressure":  68.3, "vibration": 0.51, "flow_rate": 49.5, "output_quality": 71.3},
+      {"temperature": 96.1, "pressure":  65.7, "vibration": 0.52, "flow_rate": 49.2, "output_quality": 69.8},
+      {"temperature": 75.3, "pressure": 100.5, "vibration": 0.50, "flow_rate": 50.3, "output_quality": 96.4}
+    ]
+  }
+}
+```
+
+---
+
+**Root Cause Analysis** *(pass the anomalous rows returned by Detect)*
+```
+meta {
+  name: Root Cause Analysis
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/rca
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "anomaly_id": "replace-with-anomaly-id",
+    "trace_id": "demo-001",
+    "rows": [
+      {"temperature": 95.4, "pressure": 68.3, "vibration": 0.51, "flow_rate": 49.5, "output_quality": 71.3},
+      {"temperature": 96.1, "pressure": 65.7, "vibration": 0.52, "flow_rate": 49.2, "output_quality": 69.8},
+      {"temperature": 95.8, "pressure": 67.1, "vibration": 0.50, "flow_rate": 49.8, "output_quality": 70.5}
+    ]
+  }
+}
+```
+
+---
+
+**Prescribe Actions** *(budget: fraction of total resource budget to spend, 0.0 – 1.0)*
+```
+meta {
+  name: Prescribe Actions
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/prescribe
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "rca_id": "replace-with-rca-id",
+    "trace_id": "demo-001",
+    "budget": 0.6,
+    "root_causes": [
+      {"feature": "temperature", "effect_size": 17.241, "confidence": 0.945, "method": "correlation"},
+      {"feature": "pressure",    "effect_size":  5.632, "confidence": 0.849, "method": "correlation"},
+      {"feature": "vibration",   "effect_size":  0.396, "confidence": 0.284, "method": "correlation"}
+    ]
+  }
+}
+```
+
+---
+
+**Generate Narrative** *(calls Claude claude-sonnet-4-6 — returns executive summary + recommendations)*
+```
+meta {
+  name: Generate Narrative
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/narrate
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "prescription_id": "replace-with-prescription-id",
+    "trace_id": "demo-001",
+    "rca_summary": "Top root cause: 'temperature' with confidence 0.95. Identified 2 contributing factors.",
+    "root_causes": [
+      {"feature": "temperature", "effect_size": 17.241, "confidence": 0.945, "method": "correlation"},
+      {"feature": "pressure",    "effect_size":  5.632, "confidence": 0.849, "method": "correlation"}
+    ],
+    "actions": [
+      {
+        "description": "Inspect heating/cooling elements and PID controller tuning",
+        "target_feature": "temperature",
+        "adjustment": "decrease",
+        "expected_impact": 0.945,
+        "priority": 1
+      },
+      {
+        "description": "Check pressure regulator and upstream supply lines for blockage or leak",
+        "target_feature": "pressure",
+        "adjustment": "increase",
+        "expected_impact": 0.849,
+        "priority": 2
+      }
+    ]
+  }
+}
+```
+
+---
+
+**Audit Log** *(filter by trace_id, service, from/to datetime, or limit)*
+```
+meta {
+  name: Audit Log
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/audit?trace_id=demo-001&limit=50
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+params:query {
+  trace_id: demo-001
+  limit: 50
+}
+```
 
 ### Run experiments locally (no Docker needed)
 
@@ -207,27 +431,6 @@ pip install -r requirements.txt
 python experiments/run_experiments.py
 # Results written to experiments/outputs/
 ```
-
----
-
-## API Reference
-
-All endpoints (except `/health` and `/auth/token`) require a `Bearer` token.
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/auth/token` | Exchange credentials for a JWT |
-| `POST` | `/analyze` | Trigger the full pipeline (async) |
-| `POST` | `/detect` | Run anomaly detection directly |
-| `POST` | `/rca` | Run root cause analysis directly |
-| `POST` | `/prescribe` | Run prescriptive optimisation directly |
-| `POST` | `/narrate` | Generate a narrative directly |
-| `GET` | `/audit` | Query the audit log |
-| `GET` | `/health` | Aggregate health of all services |
-
-### Trace IDs
-
-Every request carries a `trace_id` (auto-generated UUID if not supplied). The same ID threads through every stage of the pipeline, letting you reconstruct the full decision trail from ingestion to narrative via the audit endpoint.
 
 ---
 
@@ -277,12 +480,3 @@ Copy `.env.example` to `.env` and set the following:
 | `KAFKA_BOOTSTRAP_SERVERS` | Kafka broker address |
 
 Service URLs (`INGESTION_URL`, `ANOMALY_URL`, etc.) default to the Docker Compose service names and only need overriding when running services outside Docker.
-
----
-
-## Stopping the platform
-
-```bash
-./stop.sh
-# or: docker compose down -v
-```
