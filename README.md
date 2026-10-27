@@ -31,52 +31,7 @@ Each stage can be triggered via the unified API gateway, or fired independently 
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    classDef ext   fill:#f1f5f9,stroke:#94a3b8,color:#334155,rx:6
-    classDef svc   fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
-    classDef db    fill:#fef9c3,stroke:#ca8a04,color:#713f12
-    classDef bus   fill:#dcfce7,stroke:#16a34a,color:#14532d
-
-    CLIENT(["API Client"]):::ext
-    EXT(["External Sources\nOracle APEX · Salesforce · SAP BTP"]):::ext
-    LLM(["Anthropic API\nclaude-sonnet-4-6"]):::ext
-
-    subgraph PLATFORM["RCA Platform"]
-        GW["Gateway  :8000\nJWT auth · routing · health"]:::svc
-
-        subgraph PIPELINE["Event-Driven Pipeline — Redis Pub/Sub"]
-            ING["Ingestion  :8001\nREST · PostgreSQL · Kafka"]:::svc
-            ANO["Anomaly Detection  :8002\nZ-Score · Isolation Forest · LSTM"]:::svc
-            RCA_C["Root Cause Analysis  :8003\nCausal Graph · DoWhy · Granger"]:::svc
-            PRE["Prescriptive Analytics  :8004\n0/1 Knapsack LP · PuLP/CBC"]:::svc
-            NAR["Narrative Generation  :8005\nPrompt-cached Claude"]:::svc
-        end
-
-        subgraph STORES["Data Stores"]
-            GOV["Governance  :8006\nAudit log API"]:::svc
-            PG[("PostgreSQL 15\naudit log")]:::db
-            KAFKA[("Apache Kafka\nexternal ingest")]:::bus
-        end
-    end
-
-    CLIENT -->|"HTTPS / JWT"| GW
-    EXT -->|REST| GW
-    GW --> ING
-    ING -->|"① data_ingested"| ANO
-    ANO -->|"② anomaly_detected"| RCA_C
-    RCA_C -->|"③ rca_complete"| PRE
-    PRE -->|"④ prescription_ready"| NAR
-    NAR -.->|API| LLM
-    ING -.->|consume| KAFKA
-    ING -.->|audit| GOV
-    ANO -.->|audit| GOV
-    RCA_C -.->|audit| GOV
-    PRE -.->|audit| GOV
-    NAR -.->|audit| GOV
-    GOV --> PG
-    GW -.->|"/audit"| GOV
-```
+![Architecture](docs/architecture.png)
 
 ---
 
